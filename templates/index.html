@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NBA Game Predictor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        .firework {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        
+        .select2-container {
+            width: 100% !important;
+        }
+
+        .team-select-container {
+            margin-bottom: 20px;
+        }
+
+        .prediction-result {
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .winner {
+            font-weight: bold;
+            font-size: 1.2em;
+            color: #28a745;
+        }
+        
+        .prediction-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .table {
+            font-size: 0.9rem;
+        }
+        .prediction-score {
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-align: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        body {
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Add this hidden input to store the standings data -->
+    <input type="hidden" id="standings-data" data-teams='{{ teams_json|safe }}'>
+    
+    <div class="container">
+        <h1 class="text-center mb-4">NBA Game Predictor</h1>
+        
+        <div class="row">
+            <!-- Prediction Form -->
+            <div class="col-md-6">
+                <div class="prediction-card">
+                    <h3>Predict Game</h3>
+                    <form id="prediction-form">
+                        <div class="team-select-container">
+                            <label for="team1" class="form-label">Team 1</label>
+                            <select class="form-select team-select" id="team1" name="team1">
+                                <option value="">Select Team 1</option>
+                                {% for conf in ['Eastern', 'Western'] %}
+                                    <optgroup label="{{ conf }} Conference">
+                                    {% for team in teams if team.conference == conf %}
+                                        <option value="{{ team.name }}" data-color="{{ team.primary_color }}">{{ team.name }}</option>
+                                    {% endfor %}
+                                    </optgroup>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="team-select-container">
+                            <label for="team2" class="form-label">Team 2</label>
+                            <select class="form-select team-select" id="team2" name="team2">
+                                <option value="">Select Team 2</option>
+                                {% for conf in ['Eastern', 'Western'] %}
+                                    <optgroup label="{{ conf }} Conference">
+                                    {% for team in teams if team.conference == conf %}
+                                        <option value="{{ team.name }}" data-color="{{ team.primary_color }}">{{ team.name }}</option>
+                                    {% endfor %}
+                                    </optgroup>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Predict Winner</button>
+                    </form>
+                    <div id="prediction-result" class="prediction-result"></div>
+                    <div id="loadingSpinner" class="text-center mt-3" style="display: none;">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    <div id="predictionResults" class="mt-4" style="display: none;">
+                        <h3>Prediction Results</h3>
+                        <div id="probabilityDisplay"></div>
+                        <div id="scoreDisplay" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Standings -->
+            <div class="col-md-6">
+                <div class="prediction-card">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Team Standings</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-12 mb-4">
+                                    <h6 class="text-muted">Eastern Conference</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover table-striped">
+                                            <thead>
+                                                <tr class="text-center">
+                                                    <th>RANK</th>
+                                                    <th class="text-start">TEAM</th>
+                                                    <th>W</th>
+                                                    <th>L</th>
+                                                    <th>WIN%</th>
+                                                    <th>GB</th>
+                                                    <th>CONF</th>
+                                                    <th>DIV</th>
+                                                    <th>HOME</th>
+                                                    <th>ROAD</th>
+                                                    <th>NEUTRAL</th>
+                                                    <th>OT</th>
+                                                    <th>LAST10</th>
+                                                    <th>STREAK</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for team in standings.Eastern %}
+                                                <tr class="text-center">
+                                                    <td>{{ loop.index }}</td>
+                                                    <td class="text-start">
+                                                        <div class="d-flex align-items-center">
+                                                            <img src="{{ team.logo }}" alt="{{ team.name }}" style="height: 30px; width: 30px; margin-right: 10px;">
+                                                            <span>{{ team.name }}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td>{{ team.wins }}</td>
+                                                    <td>{{ team.losses }}</td>
+                                                    <td>.{{ '%03d'|format((team.wins / (team.wins + team.losses) * 1000)|int if team.wins + team.losses > 0 else 0) }}</td>
+                                                    <td>{{ team.games_behind }}</td>
+                                                    <td>{{ team.conference_record }}</td>
+                                                    <td>{{ team.division_record }}</td>
+                                                    <td>{{ team.home_record }}</td>
+                                                    <td>{{ team.away_record }}</td>
+                                                    <td>{{ team.neutral_record }}</td>
+                                                    <td>{{ team.ot_record }}</td>
+                                                    <td>{{ team.last_10 }}</td>
+                                                    <td>{{ team.streak }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <h6 class="text-muted">Western Conference</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover table-striped">
+                                            <thead>
+                                                <tr class="text-center">
+                                                    <th>RANK</th>
+                                                    <th class="text-start">TEAM</th>
+                                                    <th>W</th>
+                                                    <th>L</th>
+                                                    <th>WIN%</th>
+                                                    <th>GB</th>
+                                                    <th>CONF</th>
+                                                    <th>DIV</th>
+                                                    <th>HOME</th>
+                                                    <th>ROAD</th>
+                                                    <th>NEUTRAL</th>
+                                                    <th>OT</th>
+                                                    <th>LAST10</th>
+                                                    <th>STREAK</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for team in standings.Western %}
+                                                <tr class="text-center">
+                                                    <td>{{ loop.index }}</td>
+                                                    <td class="text-start">
+                                                        <div class="d-flex align-items-center">
+                                                            <img src="{{ team.logo }}" alt="{{ team.name }}" style="height: 30px; width: 30px; margin-right: 10px;">
+                                                            <span>{{ team.name }}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td>{{ team.wins }}</td>
+                                                    <td>{{ team.losses }}</td>
+                                                    <td>.{{ '%03d'|format((team.wins / (team.wins + team.losses) * 1000)|int if team.wins + team.losses > 0 else 0) }}</td>
+                                                    <td>{{ team.games_behind }}</td>
+                                                    <td>{{ team.conference_record }}</td>
+                                                    <td>{{ team.division_record }}</td>
+                                                    <td>{{ team.home_record }}</td>
+                                                    <td>{{ team.away_record }}</td>
+                                                    <td>{{ team.neutral_record }}</td>
+                                                    <td>{{ team.ot_record }}</td>
+                                                    <td>{{ team.last_10 }}</td>
+                                                    <td>{{ team.streak }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Initialize Select2 for team selection
+            $('.team-select').select2({
+                theme: "classic",
+                placeholder: "Select a team",
+                allowClear: true
+            });
+
+            // Handle form submission
+            $('#prediction-form').on('submit', function(e) {
+                e.preventDefault();
+                
+                const team1 = $('#team1').val();
+                const team2 = $('#team2').val();
+                
+                if (!team1 || !team2) {
+                    alert('Please select both teams');
+                    return;
+                }
+
+                if (team1 === team2) {
+                    alert('Please select different teams');
+                    return;
+                }
+
+                // Get team colors
+                const team1Color = $('#team1 option:selected').data('color');
+                const team2Color = $('#team2 option:selected').data('color');
+
+                fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        team1: team1,
+                        team2: team2
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    const winningTeam = data.winner;
+                    const winningColor = winningTeam === team1 ? team1Color : team2Color;
+                    
+                    // Display prediction result
+                    $('#prediction-result').html(`
+                        <h4>Prediction Result:</h4>
+                        <p><span class="winner">${winningTeam}</span> is predicted to win!</p>
+                        <p>Win Probability: ${(data.probability * 100).toFixed(1)}%</p>
+                    `);
+
+                    // Create firework effect
+                    const duration = 5 * 1000;
+                    const animationEnd = Date.now() + duration;
+                    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+                    function randomInRange(min, max) {
+                        return Math.random() * (max - min) + min;
+                    }
+
+                    const interval = setInterval(function() {
+                        const timeLeft = animationEnd - Date.now();
+
+                        if (timeLeft <= 0) {
+                            return clearInterval(interval);
+                        }
+
+                        const particleCount = 50 * (timeLeft / duration);
+
+                        confetti(Object.assign({}, defaults, {
+                            particleCount,
+                            origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 },
+                            colors: [winningColor, '#ffffff'],
+                        }));
+                        confetti(Object.assign({}, defaults, {
+                            particleCount,
+                            origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 },
+                            colors: [winningColor, '#ffffff'],
+                        }));
+                    }, 250);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    $('#prediction-result').html('<p class="text-danger">Error making prediction. Please try again.</p>');
+                });
+            });
+        });
+    </script>
+</body>
+</html>
